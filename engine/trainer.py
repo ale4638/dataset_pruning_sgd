@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from typing import Dict, List
 
@@ -10,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from .evaluator import evaluate
 from .utils import AverageMeter, save_json
@@ -32,6 +34,8 @@ def train_one_epoch(
     optimizer: optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    epoch: int = 0,
+    total_epochs: int = 0,
 ) -> Dict[str, float]:
     """Run one training epoch and return loss / accuracy."""
     model.train()
@@ -39,7 +43,15 @@ def train_one_epoch(
     correct = 0
     total = 0
 
-    for inputs, targets in dataloader:
+    pbar = tqdm(
+        dataloader,
+        desc=f"Epoch {epoch:>3d}/{total_epochs}  [Train]",
+        leave=False,
+        bar_format="{l_bar}{bar:30}{r_bar}",
+        file=sys.stdout,
+    )
+
+    for inputs, targets in pbar:
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -51,6 +63,9 @@ def train_one_epoch(
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
+        acc = 100.0 * correct / total
+
+        pbar.set_postfix_str(f"Loss={losses.avg:.4f}  Acc={acc:.2f}%")
 
     accuracy = 100.0 * correct / total
     return {"loss": losses.avg, "accuracy": accuracy}
@@ -95,8 +110,12 @@ def train_and_evaluate(
     for epoch in range(1, total_epochs + 1):
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, criterion, device,
+            epoch=epoch, total_epochs=total_epochs,
         )
-        test_metrics = evaluate(model, test_loader, device, criterion)
+        test_metrics = evaluate(
+            model, test_loader, device, criterion,
+            epoch=epoch, total_epochs=total_epochs,
+        )
         scheduler.step()
 
         is_best = test_metrics["accuracy"] > best_test_acc
@@ -114,15 +133,24 @@ def train_and_evaluate(
         }
         history.append(record)
 
-        if epoch % 10 == 0 or epoch == total_epochs or epoch == 1:
-            logger.info(
-                "Epoch %3d/%d | LR %.5f | TrainLoss %.4f TrainAcc %.2f%% | "
-                "TestLoss %.4f TestAcc %.2f%% | Best %.2f%%",
-                epoch, total_epochs, record["lr"],
-                train_metrics["loss"], train_metrics["accuracy"],
-                test_metrics["loss"], test_metrics["accuracy"],
-                best_test_acc,
-            )
+        star = " *" if is_best else ""
+        summary = (
+            f"Epoch {epoch:>3d}/{total_epochs} │ "
+            f"LR {record['lr']:.5f} │ "
+            f"Train Loss {train_metrics['loss']:.4f}  Acc {train_metrics['accuracy']:.2f}% │ "
+            f"Test Loss {test_metrics['loss']:.4f}  Acc {test_metrics['accuracy']:.2f}% │ "
+            f"Best {best_test_acc:.2f}%{star}"
+        )
+        print(summary, flush=True)
+
+        logger.info(
+            "Epoch %3d/%d | LR %.5f | TrainLoss %.4f TrainAcc %.2f%% | "
+            "TestLoss %.4f TestAcc %.2f%% | Best %.2f%%",
+            epoch, total_epochs, record["lr"],
+            train_metrics["loss"], train_metrics["accuracy"],
+            test_metrics["loss"], test_metrics["accuracy"],
+            best_test_acc,
+        )
 
         if save_checkpoints:
             ckpt = {

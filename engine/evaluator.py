@@ -1,10 +1,12 @@
 """Model evaluation on a test / validation set."""
 
+import sys
 from typing import Dict
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from .utils import AverageMeter
 
@@ -15,6 +17,8 @@ def evaluate(
     dataloader: DataLoader,
     device: torch.device,
     criterion: nn.Module,
+    epoch: int = 0,
+    total_epochs: int = 0,
 ) -> Dict[str, float]:
     """Evaluate model and return loss / top-1 accuracy.
 
@@ -26,7 +30,15 @@ def evaluate(
     correct = 0
     total = 0
 
-    for inputs, targets in dataloader:
+    pbar = tqdm(
+        dataloader,
+        desc=f"Epoch {epoch:>3d}/{total_epochs}  [ Test]",
+        leave=False,
+        bar_format="{l_bar}{bar:30}{r_bar}",
+        file=sys.stdout,
+    )
+
+    for inputs, targets in pbar:
         inputs, targets = inputs.to(device), targets.to(device)
         outputs = model(inputs)
         loss = criterion(outputs, targets)
@@ -35,6 +47,9 @@ def evaluate(
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
+        acc = 100.0 * correct / total
+
+        pbar.set_postfix_str(f"Loss={losses.avg:.4f}  Acc={acc:.2f}%")
 
     accuracy = 100.0 * correct / total
     return {
