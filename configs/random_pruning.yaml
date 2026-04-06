@@ -1,0 +1,33 @@
+training:
+  epochs: 200
+  batch_size: 256
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 5.0e-4
+  num_workers: 4
+
+model:
+  name: resnet50
+
+datasets:
+  cifar10:
+    root: ./data
+    num_classes: 10
+    pruning_ratios: [0, 2, 10, 20, 40, 60, 80]
+  cifar100:
+    root: ./data
+    num_classes: 100
+    pruning_ratios: [0, 2, 10, 20, 30, 40, 50]
+  tinyimagenet:
+    root: ./data/tiny-imagenet-200
+    num_classes: 200
+    pruning_ratios: [0, 2, 10, 20, 30, 40, 50]
+
+pruning:
+  method: random
+  seeds: [0, 1, 2]
+  deterministic: true
+
+output:
+  root: results/random_pruning
+  save_checkpoints: false

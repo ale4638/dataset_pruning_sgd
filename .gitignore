@@ -1,0 +1,30 @@
+# datasets
+data/
+
+# experiment outputs
+results/
+checkpoint/
+temp/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# torch checkpoints
+*.pth
+*.pt
+
+# misc
+*.mat
