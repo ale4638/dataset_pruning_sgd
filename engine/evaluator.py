@@ -19,6 +19,7 @@ def evaluate(
     criterion: nn.Module,
     epoch: int = 0,
     total_epochs: int = 0,
+    run_tag: str = "",
 ) -> Dict[str, float]:
     """Evaluate model and return loss / top-1 accuracy.
 
@@ -32,7 +33,7 @@ def evaluate(
 
     pbar = tqdm(
         dataloader,
-        desc=f"Epoch {epoch:>3d}/{total_epochs}  [ Test]",
+        desc=f"{run_tag} Epoch {epoch:>3d}/{total_epochs} [ Test]",
         leave=False,
         bar_format="{l_bar}{bar:30}{r_bar}",
         file=sys.stdout,

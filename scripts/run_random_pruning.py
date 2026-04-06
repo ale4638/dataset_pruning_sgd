@@ -172,6 +172,10 @@ def run_single(
         device=device,
         output_dir=str(output_dir),
         save_checkpoints=save_checkpoints,
+        run_logger=lgr,
+        dataset_name=dataset_name,
+        pruning_ratio=pruning_ratio,
+        seed=seed,
     )
 
     results.update({

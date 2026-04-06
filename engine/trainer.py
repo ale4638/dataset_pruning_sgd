@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -36,6 +36,7 @@ def train_one_epoch(
     device: torch.device,
     epoch: int = 0,
     total_epochs: int = 0,
+    run_tag: str = "",
 ) -> Dict[str, float]:
     """Run one training epoch and return loss / accuracy."""
     model.train()
@@ -45,7 +46,7 @@ def train_one_epoch(
 
     pbar = tqdm(
         dataloader,
-        desc=f"Epoch {epoch:>3d}/{total_epochs}  [Train]",
+        desc=f"{run_tag} Epoch {epoch:>3d}/{total_epochs} [Train]",
         leave=False,
         bar_format="{l_bar}{bar:30}{r_bar}",
         file=sys.stdout,
@@ -79,6 +80,10 @@ def train_and_evaluate(
     device: torch.device,
     output_dir: str,
     save_checkpoints: bool = False,
+    run_logger: Optional[logging.Logger] = None,
+    dataset_name: str = "",
+    pruning_ratio: float = 0.0,
+    seed: int = 0,
 ) -> dict:
     """Full training + evaluation pipeline.
 
@@ -87,8 +92,18 @@ def train_and_evaluate(
 
     Returns:
         dict with final / best metrics and timing.
+
+    ``run_logger``:
+        If provided (e.g. the per-run logger from ``setup_logger`` with a
+        ``FileHandler``), epoch summaries are written there so ``training.log``
+        matches the terminal. If ``None``, only the module logger / stdout apply.
+    ``dataset_name``, ``pruning_ratio``, ``seed``:
+        Metadata for logging; included in each epoch summary line.
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    log = run_logger if run_logger is not None else logger
+    run_tag = f"[{dataset_name}|prune={int(pruning_ratio)}%|seed={seed}]"
 
     model = build_model(num_classes).to(device)
     criterion = nn.CrossEntropyLoss()
@@ -110,11 +125,11 @@ def train_and_evaluate(
     for epoch in range(1, total_epochs + 1):
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, criterion, device,
-            epoch=epoch, total_epochs=total_epochs,
+            epoch=epoch, total_epochs=total_epochs, run_tag=run_tag,
         )
         test_metrics = evaluate(
             model, test_loader, device, criterion,
-            epoch=epoch, total_epochs=total_epochs,
+            epoch=epoch, total_epochs=total_epochs, run_tag=run_tag,
         )
         scheduler.step()
 
@@ -135,22 +150,24 @@ def train_and_evaluate(
 
         star = " *" if is_best else ""
         summary = (
-            f"Epoch {epoch:>3d}/{total_epochs} │ "
+            f"{run_tag} Epoch {epoch:>3d}/{total_epochs} │ "
             f"LR {record['lr']:.5f} │ "
             f"Train Loss {train_metrics['loss']:.4f}  Acc {train_metrics['accuracy']:.2f}% │ "
             f"Test Loss {test_metrics['loss']:.4f}  Acc {test_metrics['accuracy']:.2f}% │ "
             f"Best {best_test_acc:.2f}%{star}"
         )
-        print(summary, flush=True)
-
-        logger.info(
-            "Epoch %3d/%d | LR %.5f | TrainLoss %.4f TrainAcc %.2f%% | "
-            "TestLoss %.4f TestAcc %.2f%% | Best %.2f%%",
-            epoch, total_epochs, record["lr"],
-            train_metrics["loss"], train_metrics["accuracy"],
-            test_metrics["loss"], test_metrics["accuracy"],
-            best_test_acc,
-        )
+        if run_logger is not None:
+            log.info(summary)
+        else:
+            print(summary, flush=True)
+            logger.info(
+                "%s Epoch %3d/%d | LR %.5f | TrainLoss %.4f TrainAcc %.2f%% | "
+                "TestLoss %.4f TestAcc %.2f%% | Best %.2f%%",
+                run_tag, epoch, total_epochs, record["lr"],
+                train_metrics["loss"], train_metrics["accuracy"],
+                test_metrics["loss"], test_metrics["accuracy"],
+                best_test_acc,
+            )
 
         if save_checkpoints:
             ckpt = {
@@ -177,8 +194,9 @@ def train_and_evaluate(
     save_json(history, os.path.join(output_dir, "training_history.json"))
     save_json(results, os.path.join(output_dir, "results.json"))
 
-    logger.info(
-        "Training complete | %.1f min | Final TestAcc %.2f%% | Best %.2f%%",
-        elapsed / 60, results["final_test_acc"], best_test_acc,
+    done_msg = (
+        f"{run_tag} Training complete | {elapsed / 60:.1f} min | "
+        f"Final TestAcc {results['final_test_acc']:.2f}% | Best {best_test_acc:.2f}%"
     )
+    log.info(done_msg)
     return results

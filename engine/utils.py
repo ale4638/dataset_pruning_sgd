@@ -54,7 +54,15 @@ def setup_logger(
         log_dir = os.path.dirname(log_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-        fh = logging.FileHandler(log_file)
+
+        class _FlushFileHandler(logging.FileHandler):
+            """Flush after each record so log files stay in sync with training."""
+
+            def emit(self, record: logging.LogRecord) -> None:
+                super().emit(record)
+                self.flush()
+
+        fh = _FlushFileHandler(log_file, encoding="utf-8")
         fh.setFormatter(fmt)
         logger.addHandler(fh)
 
