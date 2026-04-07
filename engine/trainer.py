@@ -15,6 +15,7 @@ from tqdm import tqdm
 from models.resnet import ResNet50
 
 from .evaluator import evaluate
+from .mixup import MixupCutmix, mixup_criterion
 from .utils import AverageMeter, save_json
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,13 @@ def train_one_epoch(
     epoch: int = 0,
     total_epochs: int = 0,
     run_tag: str = "",
+    mixup_cutmix: Optional[MixupCutmix] = None,
 ) -> Dict[str, float]:
-    """Run one training epoch and return loss / accuracy."""
+    """Run one training epoch and return loss / accuracy.
+
+    Args:
+        mixup_cutmix: If provided, applies Mixup/CutMix to each batch.
+    """
     model.train()
     losses = AverageMeter()
     correct = 0
@@ -51,16 +57,33 @@ def train_one_epoch(
 
     for inputs, targets in pbar:
         inputs, targets = inputs.to(device), targets.to(device)
+
+        # Apply Mixup/CutMix if enabled
+        if mixup_cutmix is not None:
+            inputs, targets_a, targets_b, lam, use_mix = mixup_cutmix(inputs, targets)
+        else:
+            use_mix = False
+
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+
+        if use_mix:
+            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+        else:
+            loss = criterion(outputs, targets)
+
         loss.backward()
         optimizer.step()
 
         losses.update(loss.item(), inputs.size(0))
         _, predicted = outputs.max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        # For accuracy, compare with original targets (not mixed)
+        if use_mix:
+            # Use targets_a as primary for accuracy tracking (approximate)
+            correct += predicted.eq(targets_a).sum().item()
+        else:
+            correct += predicted.eq(targets).sum().item()
         acc = 100.0 * correct / total
 
         pbar.set_postfix_str(f"Loss={losses.avg:.4f}  Acc={acc:.2f}%")
@@ -81,6 +104,7 @@ def train_and_evaluate(
     dataset_name: str = "",
     pruning_ratio: float = 0.0,
     seed: int = 0,
+    augmentation_config: Optional[dict] = None,
 ) -> dict:
     """Full training + evaluation pipeline.
 
@@ -96,6 +120,9 @@ def train_and_evaluate(
         matches the terminal. If ``None``, only the module logger / stdout apply.
     ``dataset_name``, ``pruning_ratio``, ``seed``:
         Metadata for logging; included in each epoch summary line.
+    ``augmentation_config``:
+        Optional dict with keys: mixup_alpha, cutmix_alpha, mixup_prob,
+        label_smoothing. If None, no Mixup/CutMix or label smoothing is used.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -103,7 +130,13 @@ def train_and_evaluate(
     run_tag = f"[{dataset_name}|prune={int(pruning_ratio)}%|seed={seed}]"
 
     model = build_model(num_classes).to(device)
-    criterion = nn.CrossEntropyLoss()
+
+    # Label smoothing: supported in CrossEntropyLoss since PyTorch 1.10
+    label_smoothing = 0.0
+    if augmentation_config is not None:
+        label_smoothing = augmentation_config.get("label_smoothing", 0.0)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+
     optimizer = optim.SGD(
         model.parameters(),
         lr=config["lr"],
@@ -114,6 +147,26 @@ def train_and_evaluate(
         optimizer, T_max=config["epochs"],
     )
 
+    # Setup Mixup/CutMix if configured
+    mixup_cutmix = None
+    if augmentation_config is not None:
+        mixup_alpha = augmentation_config.get("mixup_alpha", 0.0)
+        cutmix_alpha = augmentation_config.get("cutmix_alpha", 0.0)
+        mixup_prob = augmentation_config.get("mixup_prob", 0.5)
+        if mixup_alpha > 0 or cutmix_alpha > 0:
+            mixup_cutmix = MixupCutmix(
+                mixup_alpha=mixup_alpha,
+                cutmix_alpha=cutmix_alpha,
+                prob=mixup_prob,
+                switch_prob=0.5,
+                enabled=True,
+            )
+            log.info(
+                f"{run_tag} Mixup/CutMix enabled: mixup_alpha={mixup_alpha}, "
+                f"cutmix_alpha={cutmix_alpha}, prob={mixup_prob}, "
+                f"label_smoothing={label_smoothing}"
+            )
+
     best_test_acc = 0.0
     history: List[dict] = []
     total_epochs = config["epochs"]
@@ -123,6 +176,7 @@ def train_and_evaluate(
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, criterion, device,
             epoch=epoch, total_epochs=total_epochs, run_tag=run_tag,
+            mixup_cutmix=mixup_cutmix,
         )
         test_metrics = evaluate(
             model, test_loader, device, criterion,

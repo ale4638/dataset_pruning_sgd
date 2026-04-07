@@ -73,6 +73,7 @@ def run_single(
     save_checkpoints: bool,
     deterministic: bool,
     resume: bool,
+    augmentation_config: dict = None,
 ) -> dict:
     """Select subset → train from scratch → evaluate → save results."""
 
@@ -143,6 +144,7 @@ def run_single(
         "training": training_config,
         "deterministic": deterministic,
         "device": str(device),
+        "augmentation": augmentation_config,
     }
     save_json(run_cfg, str(output_dir / "config.json"))
 
@@ -176,6 +178,7 @@ def run_single(
         dataset_name=dataset_name,
         pruning_ratio=pruning_ratio,
         seed=seed,
+        augmentation_config=augmentation_config,
     )
 
     results.update({
@@ -249,13 +252,25 @@ def main():
         print(f"[data] Loading dataset: {ds_name} from {ds_cfg['root']}", flush=True)
         print(f"{'=' * 60}", flush=True)
 
+        # Check for strong augmentation config (e.g., for CIFAR-100)
+        aug_cfg = ds_cfg.get("augmentation", {})
+        strong_aug = aug_cfg.get("strong_aug", False)
+
         train_ds, test_ds, num_classes = build_datasets(
-            ds_name, ds_cfg["root"], download=args.download,
+            ds_name, ds_cfg["root"], download=args.download, strong_aug=strong_aug,
         )
         print(
             f"[data] {ds_name}: Train={len(train_ds)}  Test={len(test_ds)}  "
             f"Classes={num_classes}", flush=True,
         )
+        if strong_aug:
+            print(
+                f"[data] Strong augmentation ENABLED: "
+                f"mixup_alpha={aug_cfg.get('mixup_alpha', 0)}, "
+                f"cutmix_alpha={aug_cfg.get('cutmix_alpha', 0)}, "
+                f"label_smoothing={aug_cfg.get('label_smoothing', 0)}",
+                flush=True,
+            )
         print(
             f"[plan] Pruning ratios: {ds_cfg['pruning_ratios']}  "
             f"Seeds: {seeds}  "
@@ -282,6 +297,7 @@ def main():
                     save_checkpoints=save_ckpt,
                     deterministic=deterministic,
                     resume=args.resume,
+                    augmentation_config=aug_cfg if aug_cfg else None,
                 )
                 all_results.append(result)
                 print(

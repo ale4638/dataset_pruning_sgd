@@ -18,6 +18,16 @@ datasets:
     root: ./data
     num_classes: 100
     pruning_ratios: [0, 2, 10, 20, 30, 40, 50]
+    # Strong augmentation for CIFAR-100:
+    # Transform: Resize → ColorJitter → RandomHorizontalFlip → RandomRotation(±15°)
+    #            → RandomAffine → GaussianBlur → RandomErasing
+    # Mixup/CutMix: applied in training loop
+    augmentation:
+      strong_aug: true
+      mixup_alpha: 0.8
+      cutmix_alpha: 0.8
+      mixup_prob: 0.5
+      label_smoothing: 0.1
   tinyimagenet:
     root: ./data/tiny-imagenet-200
     num_classes: 200
