@@ -91,7 +91,9 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        # Global average pool: works for 32x32 (CIFAR) and 64x64 (Tiny ImageNet);
+        # fixed kernel-4 pool only matched 32x32 inputs.
+        out = F.adaptive_avg_pool2d(out, (1, 1))
         out = out.view(out.size(0), -1)
         feature = self.linear1(out)
         output = self.linear2(feature)
@@ -109,8 +111,8 @@ def ResNet34():
     return ResNet(BasicBlock, [3, 4, 6, 3])
 
 
-def ResNet50():
-    return ResNet(Bottleneck, [3, 4, 6, 3])
+def ResNet50(num_classes=10):
+    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_classes)
 
 
 def ResNet101():

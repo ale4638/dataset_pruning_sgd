@@ -145,7 +145,7 @@ results/random_pruning/
 
 | Setting | Value |
 |---------|-------|
-| Architecture | torchvision ResNet-50 |
+| Architecture | CIFAR-style ResNet-50 (`models/resnet.py`: 3×3 stem, Bottleneck `[3,4,6,3]`, `2048→50→C`) |
 | Epochs | 200 |
 | Batch size | 256 |
 | Optimizer | SGD (momentum 0.9, weight decay 5e-4) |
@@ -154,7 +154,7 @@ results/random_pruning/
 | Evaluation metric | Top-1 test accuracy (%) |
 | Repetitions | 3 seeds per (dataset, pruning_ratio) |
 
-Each run trains a **freshly initialised** ResNet-50 on the pruned subset; no fine-tuning from a full-data checkpoint.
+Each run trains a **freshly initialised** ResNet-50 (project implementation, not `torchvision.models`) on the pruned subset; no fine-tuning from a full-data checkpoint.
 
 ---
 

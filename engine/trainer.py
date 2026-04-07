@@ -9,9 +9,10 @@ from typing import Dict, List, Optional
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+from models.resnet import ResNet50
 
 from .evaluator import evaluate
 from .utils import AverageMeter, save_json
@@ -20,12 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 def build_model(num_classes: int) -> nn.Module:
-    """Build a torchvision ResNet50 (random init, no pretrained weights)."""
-    try:
-        model = models.resnet50(weights=None, num_classes=num_classes)
-    except TypeError:
-        model = models.resnet50(pretrained=False, num_classes=num_classes)
-    return model
+    """CIFAR-style ResNet-50: 3x3 stem, Bottleneck [3,4,6,3], linear 2048->50->num_classes."""
+    return ResNet50(num_classes=num_classes)
 
 
 def train_one_epoch(
